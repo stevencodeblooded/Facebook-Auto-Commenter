@@ -39,7 +39,7 @@ async function startCommentingProcess({
       // Navigate to post
       await chrome.tabs.update(tabId, { url: postUrls[i] });
       await waitForPageLoad(tabId);
-      await sleep(2000); // Extra wait for dynamic content
+      await sleep(3000); // Extra wait for dynamic content
 
       // Check if already commented
       const hasCommented = await executeScriptInTab(
@@ -223,65 +223,152 @@ function checkIfAlreadyCommented(userName) {
 
 async function postCommentAsync(commentText) {
   try {
-    // Find comment input field
-    let commentBox = document.querySelector(
-      '[aria-label="Write a comment..."], [aria-label="Write a comment"], [data-lexical-editor="true"]'
+    console.log("Starting comment process...");
+
+    // First, find the comment button by its aria-label
+    const commentButton = document.querySelector(
+      '[aria-label="Leave a comment"]'
     );
+    if (!commentButton) {
+      console.error("Comment button not found");
+      throw new Error("Comment button not found");
+    }
+
+    console.log("Found comment button, clicking...");
+    commentButton.click();
+
+    // Wait for the comment modal to appear
+    console.log("Waiting for comment modal...");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Find the comment modal
+    const commentModal = document.querySelector('[role="dialog"]');
+    if (!commentModal) {
+      console.error("Comment modal not found");
+      throw new Error("Comment modal not found");
+    }
+
+    console.log("Comment modal appeared");
+
+    // Find the comment input within the modal
+    console.log("Looking for comment input in modal...");
+    let commentBox =
+      commentModal.querySelector('[contenteditable="true"]') ||
+      commentModal.querySelector('[data-lexical-editor="true"]') ||
+      commentModal.querySelector('[aria-label*="Write a comment"]');
 
     if (!commentBox) {
-      return false;
+      // If not found in modal, check the entire document
+      commentBox = document.querySelector(
+        '[contenteditable="true"][data-lexical-editor="true"]'
+      );
     }
 
-    // Click to focus
+    if (!commentBox) {
+      console.error("Comment box not found in modal");
+      throw new Error("Comment box not found in modal");
+    }
+
+    console.log("Found comment box, focusing...");
+    // Focus on the comment box
+    commentBox.focus();
     commentBox.click();
+
+    // Wait for focus to settle
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // For modern Facebook editor
-    if (commentBox.getAttribute("contenteditable") === "true") {
-      commentBox.innerHTML = "";
-      const textNode = document.createTextNode(commentText);
-      commentBox.appendChild(textNode);
+    // Clear any existing content
+    commentBox.innerHTML = "";
 
-      const inputEvent = new InputEvent("input", {
-        bubbles: true,
-        cancelable: true,
-        inputType: "insertText",
-        data: commentText,
-      });
-      commentBox.dispatchEvent(inputEvent);
-    } else {
-      commentBox.textContent = commentText;
-      commentBox.value = commentText;
-    }
+    // Insert the comment text
+    console.log(`Inserting comment text: "${commentText}"`);
+    const paragraph = document.createElement("p");
+    paragraph.textContent = commentText;
+    commentBox.appendChild(paragraph);
+
+    // Trigger input event
+    const inputEvent = new InputEvent("input", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertText",
+      data: commentText,
+    });
+    commentBox.dispatchEvent(inputEvent);
 
     // Wait for Facebook to process
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Find and click submit button
-    const submitButton = document.querySelector(
-      '[aria-label="Comment"], [aria-label="Post"]'
-    );
+    // Find and click the submit button
+    console.log("Looking for submit button...");
+    const submitButton =
+      commentModal.querySelector('[aria-label="Comment"]') ||
+      commentModal.querySelector('[aria-label="Post"]') ||
+      document.querySelector('[aria-label="Comment"]') ||
+      document.querySelector('[aria-label="Post"]');
 
     if (submitButton && !submitButton.disabled) {
+      console.log("Found submit button, clicking...");
       submitButton.click();
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for comment to be posted
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      console.log("Comment posted successfully");
+
+      // Close the modal
+      await closeCommentModal();
+
       return true;
     }
 
-    // Fallback: press Enter
+    // Fallback: try pressing Enter
+    console.log("No submit button found, trying Enter key...");
     const enterEvent = new KeyboardEvent("keydown", {
       key: "Enter",
       code: "Enter",
       keyCode: 13,
       which: 13,
       bubbles: true,
+      cancelable: true,
     });
     commentBox.dispatchEvent(enterEvent);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    console.log("Comment posted using Enter key");
+
+    // Close the modal
+    await closeCommentModal();
 
     return true;
   } catch (error) {
     console.error("Error posting comment:", error);
     return false;
+  }
+}
+
+async function closeCommentModal() {
+  try {
+    console.log("Attempting to close comment modal...");
+
+    // Find the close button using the selector from your screenshot
+    const closeButton = document.querySelector('[aria-label="Close"]');
+    if (closeButton) {
+      closeButton.click();
+      console.log("Close button clicked");
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return true;
+    }
+
+    // Fallback: try pressing Escape key
+    const escapeEvent = new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      keyCode: 27,
+      which: 27,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(escapeEvent);
+    console.log("Escape key pressed");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  } catch (error) {
+    console.error("Error closing modal:", error);
   }
 }
