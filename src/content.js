@@ -93,28 +93,102 @@ function getLoggedInUserInfo() {
       }
     }
 
-    // Method 3: From user menu or profile area
-    const userNameElements = document.querySelectorAll('span[dir="auto"]');
-    for (const el of userNameElements) {
-      // Look for spans that might contain the username in top navigation or menu
-      if (
-        el.textContent &&
-        el.textContent.length > 0 &&
-        !el.textContent.includes("Write a") &&
-        !el.textContent.includes("Like") &&
-        !el.textContent.includes("Comment") &&
-        !el.textContent.includes("Share")
-      ) {
-        userName = el.textContent.trim();
-        console.log(`Found potential username: ${userName}`);
+    // IMPROVED: Better username detection that avoids the "Notifications" label
+    // Method 1: From comment box placeholder
+    const commentBoxes = document.querySelectorAll(
+      'div[contenteditable="true"][aria-label*="Write a comment"]'
+    );
+    for (const box of commentBoxes) {
+      // Look for "Write a comment as [Name]" pattern
+      const ariaLabel = box.getAttribute("aria-label") || "";
+      const matches = ariaLabel.match(/Write a comment as ([^.]+)/i);
+      if (matches && matches[1]) {
+        userName = matches[1].trim();
+        console.log(`Found username from comment box: ${userName}`);
         break;
+      }
+    }
+
+    // Method 2: From user menu in top navigation
+    if (!userName) {
+      // Look for the user profile link in the top navigation
+      const profileNavLinks = document.querySelectorAll(
+        'a[role="link"][tabindex="0"][aria-label]'
+      );
+      for (const link of profileNavLinks) {
+        const ariaLabel = link.getAttribute("aria-label") || "";
+        // Skip links that are clearly not profile links
+        if (
+          !ariaLabel.includes("Notifications") &&
+          !ariaLabel.includes("Menu") &&
+          !ariaLabel.includes("Create") &&
+          !ariaLabel.includes("Messenger")
+        ) {
+          userName = ariaLabel.trim();
+          console.log(`Found username from profile nav: ${userName}`);
+          break;
+        }
+      }
+    }
+
+    // Method 3: From existing comments by this user (fallback)
+    if (!userName) {
+      // Try to find any comments that seem to be from the current user
+      const commentAuthorLinks = document.querySelectorAll(
+        'a[role="link"][tabindex="0"]'
+      );
+      for (const link of commentAuthorLinks) {
+        if (
+          link.href &&
+          (link.href.includes(`/user/${userId}`) ||
+            link.href.includes(`profile.php?id=${userId}`))
+        ) {
+          // This is likely a link to the current user's profile in a comment
+          const authorSpan = link.querySelector("span");
+          if (
+            authorSpan &&
+            authorSpan.textContent &&
+            authorSpan.textContent.trim().length > 0
+          ) {
+            userName = authorSpan.textContent.trim();
+            console.log(`Found username from own comment: ${userName}`);
+            break;
+          }
+        }
+      }
+    }
+
+    // Method 4: Original fallback method (with fixes to avoid "Notifications")
+    if (!userName) {
+      const navBarItems = document.querySelectorAll('span[dir="auto"]');
+      for (const el of navBarItems) {
+        // Skip obvious UI elements and look for longer text that's likely a name
+        if (
+          el.textContent &&
+          el.textContent.trim().length > 0 &&
+          !el.textContent.includes("Write a") &&
+          !el.textContent.includes("Like") &&
+          !el.textContent.includes("Comment") &&
+          !el.textContent.includes("Share") &&
+          !el.textContent.includes("Notifications") &&
+          !el.textContent.includes("Menu") &&
+          !el.textContent.includes("Create")
+        ) {
+          const text = el.textContent.trim();
+          // Names are typically capitalized and without special characters
+          if (/^[A-Z][a-z]/.test(text) && text.length > 2) {
+            userName = text;
+            console.log(`Found potential username from span: ${userName}`);
+            break;
+          }
+        }
       }
     }
   } catch (error) {
     console.error("Error extracting user info:", error);
   }
 
-  console.log(`User info: ID=${userId}, Name=${userName}`);
+  console.log(`Final user info: ID=${userId}, Name=${userName}`);
   return { userId, userName };
 }
 
@@ -133,94 +207,86 @@ async function hasUserAlreadyCommented() {
       return false;
     }
 
-    // Wait for post to fully load
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Wait longer for post and comments to fully load
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
-    // Find the main post container first to restrict our search scope
-    const postContainer = document.querySelector(
-      '[role="article"][tabindex="-1"]'
-    );
-    if (!postContainer) {
-      console.log("Could not find post container, checking whole page");
-      // Fall back to old behavior
+    // Try to find "View more comments" button and click it to load more comments
+    try {
+      const viewMoreButtons = document.querySelectorAll(
+        'div[role="button"][tabindex="0"]'
+      );
+      for (const button of viewMoreButtons) {
+        if (
+          button.textContent &&
+          (button.textContent.includes("View") ||
+            button.textContent.includes("more comment"))
+        ) {
+          console.log(
+            "Clicking 'View more comments' button to load all comments"
+          );
+          button.click();
+          // Wait for comments to load
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          break;
+        }
+      }
+    } catch (e) {
+      console.log("No 'View more comments' button found or error clicking:", e);
     }
 
-    // Method 1: Check for user ID in comment links WITHIN THE POST CONTAINER
-    if (userId && postContainer) {
-      // Restrict search to only comments within this post
-      const userCommentLinks = postContainer.querySelectorAll(
-        `a[href*="/user/${userId}"]`
-      );
-      if (userCommentLinks.length > 0) {
-        console.log(
-          `Found ${userCommentLinks.length} comments by user ID ${userId} in this post, skipping`
-        );
-        return true;
-      }
-
-      // Additional check for profile ID links
-      const profileCommentLinks = postContainer.querySelectorAll(
-        `a[href*="profile.php?id=${userId}"]`
-      );
-      if (profileCommentLinks.length > 0) {
-        console.log(
-          `Found ${profileCommentLinks.length} comments by profile ID ${userId} in this post, skipping`
-        );
-        return true;
-      }
-    } else {
-      // Fallback to searching the entire page if we can't find the post container
-      const userCommentLinks = document.querySelectorAll(
-        `a[href*="/user/${userId}"]`
-      );
-      const profileCommentLinks = document.querySelectorAll(
-        `a[href*="profile.php?id=${userId}"]`
-      );
-
-      // Log what we found for debugging
-      console.log(
-        `Found ${userCommentLinks.length} user ID links and ${profileCommentLinks.length} profile links`
-      );
-
-      // Verify these are actually comment links
-      let validCommentCount = 0;
-      [...userCommentLinks, ...profileCommentLinks].forEach((link) => {
-        // Look for parent elements that indicate this is a comment
-        const isInComment = !!link.closest('[role="article"][tabindex="-1"]');
-        if (isInComment) validCommentCount++;
-        console.log(
-          `Link ${link.href}: ${
-            isInComment ? "Is in comment" : "Not in comment"
-          }`
-        );
-      });
-
-      if (validCommentCount > 0) {
-        console.log(
-          `Found ${validCommentCount} verified comments by user, skipping post`
-        );
-        return true;
-      }
-    }
-
-    // Method 2: Check for username in comment authors as backup
+    // IMPROVED: Method 1 - Check for comments with aria-label containing user's name
     if (userName) {
-      const commentSelector = postContainer
-        ? 'span.x193iq5w[dir="auto"]' // Within post container
-        : 'div[role="article"] span.x193iq5w[dir="auto"]'; // On whole page with article wrapper
-
-      const commentAuthorSpans = (postContainer || document).querySelectorAll(
-        commentSelector
+      // Look for comments where aria-label contains "Comment by [Username]"
+      const commentContainers = document.querySelectorAll(
+        'div[role="article"][aria-label*="Comment by"]'
       );
 
-      console.log(
-        `Found ${commentAuthorSpans.length} potential comment author spans`
+      for (const container of commentContainers) {
+        const ariaLabel = container.getAttribute("aria-label") || "";
+        if (ariaLabel.includes(`Comment by ${userName}`)) {
+          console.log(
+            `Found comment with aria-label containing "${userName}", skipping post`
+          );
+          return true;
+        }
+      }
+    }
+
+    // IMPROVED: Method 2 - Check for comments with the right nested structure
+    if (userName) {
+      // This targets the specific structure observed in Facebook comments
+      const commentAuthorSpans = document.querySelectorAll(
+        'span.x3nfvp2 span[dir="auto"], div[role="article"] span.x193iq5w[dir="auto"]'
       );
 
       for (const span of commentAuthorSpans) {
-        console.log(`Checking span with text: "${span.textContent.trim()}"`);
+        console.log(
+          `Checking comment author span: "${span.textContent.trim()}"`
+        );
         if (span.textContent.trim() === userName) {
-          console.log(`Found comment by username "${userName}", skipping post`);
+          console.log(
+            `Found comment by username "${userName}" in span structure, skipping post`
+          );
+          return true;
+        }
+      }
+    }
+
+    // Method 3: Original method checking for user ID in comment links
+    if (userId) {
+      // Look specifically for links within comment containers
+      const commentContainers = document.querySelectorAll(
+        'div[role="article"]'
+      );
+
+      for (const container of commentContainers) {
+        const userLinks = container.querySelectorAll(
+          `a[href*="/user/${userId}"], a[href*="profile.php?id=${userId}"]`
+        );
+        if (userLinks.length > 0) {
+          console.log(
+            `Found comment with link to user ID ${userId}, skipping post`
+          );
           return true;
         }
       }

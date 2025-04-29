@@ -16,6 +16,17 @@
     <div class="comment-section">
       <h2>Comment</h2>
       <textarea id="commentText" rows="3" placeholder="Enter comment text"></textarea>
+      <div class="comment-info">
+        <div class="setting-row">
+          <label for="multiCommentMode">
+            <input type="checkbox" id="multiCommentMode"> Use multiple comments mode
+          </label>
+          <div id="commentCounter" class="comment-counter"></div>
+        </div>
+        <div id="commentInstructions" class="comment-instructions">
+          Separate different comments with a blank line (press Enter twice)
+        </div>
+      </div>
     </div>
 
     <div class="settings-section">
@@ -26,7 +37,7 @@
       </div>
       <div class="setting-row">
         <label for="randomize">
-          <input type="checkbox" id="randomize"> Randomize comment text
+          <input type="checkbox" id="randomize"> Randomize comment selection
         </label>
       </div>
     </div>

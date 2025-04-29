@@ -12,13 +12,22 @@ class FacebookCommenter {
     this.commentTextInput = document.getElementById("commentText");
     this.delayInput = document.getElementById("delay");
     this.randomizeCheckbox = document.getElementById("randomize");
+    this.multiCommentModeCheckbox = document.getElementById("multiCommentMode");
+    this.commentCounter = document.getElementById("commentCounter");
+    this.commentInstructions = document.getElementById("commentInstructions");
     this.startBtn = document.getElementById("startCommentingBtn");
     this.stopBtn = document.getElementById("stopCommentingBtn");
     this.currentStatusEl = document.getElementById("currentStatus");
     this.postProgressEl = document.getElementById("postProgress");
-    this.skippedPostsEl = document.getElementById("skippedPosts"); // New element for skipped posts count
+    this.skippedPostsEl = document.getElementById("skippedPosts"); // Element for skipped posts count
     this.successMessagesEl = document.getElementById("successMessages");
     this.errorMessagesEl = document.getElementById("errorMessages");
+
+    // Initialize comment counter
+    this.commentCounter.textContent = "1 comment detected";
+
+    // Hide instructions by default
+    this.commentInstructions.style.display = "none";
 
     // Initialize skipped posts count if element exists
     if (this.skippedPostsEl) {
@@ -39,6 +48,20 @@ class FacebookCommenter {
     this.startBtn.addEventListener("click", () => this.startCommenting());
     this.stopBtn.addEventListener("click", () => this.stopCommenting());
 
+    // Listen for changes in the comment text area to update comment count
+    this.commentTextInput.addEventListener("input", () =>
+      this.updateCommentCount()
+    );
+
+    // Toggle multi-comment mode
+    this.multiCommentModeCheckbox.addEventListener("change", () => {
+      this.commentInstructions.style.display = this.multiCommentModeCheckbox
+        .checked
+        ? "block"
+        : "none";
+      this.updateCommentCount();
+    });
+
     // Listen for messages from background script
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       switch (request.action) {
@@ -46,7 +69,7 @@ class FacebookCommenter {
           this.updateProgress(request.currentIndex, request.totalPosts);
           if (request.success) {
             this.addSuccessMessage(
-              `Successfully commented on post ${request.currentIndex}`
+              `Successfully commented on post ${request.currentIndex}: "${request.usedComment}"`
             );
           } else {
             this.addErrorMessage(
@@ -77,13 +100,50 @@ class FacebookCommenter {
     });
   }
 
+  // Parse comments based on double line breaks when in multi-comment mode
+  parseComments(text) {
+    if (!this.multiCommentModeCheckbox.checked) {
+      return [text];
+    }
+
+    // Split by double line breaks (paragraph breaks)
+    const comments = text
+      .split(/\n\s*\n+/)
+      .map((comment) => comment.trim())
+      .filter((comment) => comment);
+    return comments.length > 0 ? comments : [text];
+  }
+
+  // Update the comment count display
+  updateCommentCount() {
+    const comments = this.parseComments(this.commentTextInput.value);
+    const count = comments.length;
+    this.commentCounter.textContent = `${count} comment${
+      count !== 1 ? "s" : ""
+    } detected`;
+  }
+
   restoreState() {
     // Retrieve current commenting state when popup is opened
     chrome.runtime.sendMessage({ action: "getCommentingState" }, (state) => {
-      if (state.isCommenting) {
+      if (state && state.isCommenting) {
         // Restore UI to reflect ongoing commenting process
         this.postUrlsInput.value = state.posts.join("\n");
-        this.commentTextInput.value = state.comment;
+
+        // Restore comment text
+        if (Array.isArray(state.comments)) {
+          // Handle multi-comment mode
+          this.multiCommentModeCheckbox.checked = true;
+          this.commentInstructions.style.display = "block";
+          this.commentTextInput.value = state.comments.join("\n\n");
+        } else {
+          // Handle single comment mode
+          this.multiCommentModeCheckbox.checked = false;
+          this.commentInstructions.style.display = "none";
+          this.commentTextInput.value = state.comment || "";
+        }
+
+        this.updateCommentCount();
         this.delayInput.value = state.delay;
         this.randomizeCheckbox.checked = state.randomize;
 
@@ -152,11 +212,15 @@ class FacebookCommenter {
       .map((url) => url.trim())
       .filter((url) => url.length > 0);
 
+    // Parse comments based on multi-comment mode
     const commentText = this.commentTextInput.value.trim();
+    const comments = this.parseComments(commentText);
+
     const delay = parseInt(this.delayInput.value, 10);
     const randomize = this.randomizeCheckbox.checked;
+    const multiCommentMode = this.multiCommentModeCheckbox.checked;
 
-    if (postUrls.length === 0 || !commentText) {
+    if (postUrls.length === 0 || comments.length === 0 || !commentText) {
       this.addErrorMessage("Please enter post URLs and comment text.");
       return;
     }
@@ -169,7 +233,9 @@ class FacebookCommenter {
       {
         action: "startCommenting",
         posts: postUrls,
-        comment: commentText,
+        comments: comments,
+        comment: multiCommentMode ? null : commentText, // For backward compatibility
+        multiCommentMode: multiCommentMode,
         delay: delay,
         randomize: randomize,
       },
