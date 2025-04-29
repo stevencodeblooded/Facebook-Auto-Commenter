@@ -1,25 +1,30 @@
 {
   "manifest_version": 3,
   "name": "Facebook Auto Commenter",
-  "version": "1.0",
-  "description": "Automatically add random comments to Facebook posts",
-  "permissions": ["activeTab", "storage", "scripting", "tabs"],
-  "host_permissions": ["https://*.facebook.com/*"],
+  "version": "1.0.0",
+  "description": "Automatically comment on specified Facebook posts",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": ["https://www.facebook.com/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "src/popup.html",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
     }
   },
-  "background": {
-    "service_worker": "background.js"
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
   },
   "content_scripts": [
     {
-      "matches": ["https://*.facebook.com/*"],
-      "js": ["content.js"],
+      "matches": ["https://www.facebook.com/*"],
+      "js": ["src/content.js"],
       "run_at": "document_idle"
     }
   ]

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Facebook Auto Commenter</title>
+  <link rel="stylesheet" href="../styles/popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Facebook Auto Commenter</h1>
+    
+    <div class="posts-section">
+      <h2>Posts to Comment</h2>
+      <textarea id="postUrls" rows="5" placeholder="Enter Facebook post URLs (one per line)"></textarea>
+    </div>
+
+    <div class="comment-section">
+      <h2>Comment</h2>
+      <textarea id="commentText" rows="3" placeholder="Enter comment text"></textarea>
+    </div>
+
+    <div class="settings-section">
+      <h2>Settings</h2>
+      <div class="setting-row">
+        <label for="delay">Delay between comments (seconds):</label>
+        <input type="number" id="delay" min="1" max="60" value="5">
+      </div>
+      <div class="setting-row">
+        <label for="randomize">
+          <input type="checkbox" id="randomize"> Randomize comment text
+        </label>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="startCommentingBtn">Start Commenting</button>
+      <button id="stopCommentingBtn" disabled>Stop Commenting</button>
+    </div>
+
+    <div class="progress-section">
+      <h2>Progress</h2>
+      <div id="progressContainer">
+        <div id="currentStatus"></div>
+        <div id="postProgress"></div>
+      </div>
+    </div>
+
+    <div class="message-section">
+      <div id="successMessages" class="success-messages"></div>
+      <div id="errorMessages" class="error-messages"></div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
