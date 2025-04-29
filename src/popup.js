@@ -16,8 +16,23 @@ class FacebookCommenter {
     this.stopBtn = document.getElementById("stopCommentingBtn");
     this.currentStatusEl = document.getElementById("currentStatus");
     this.postProgressEl = document.getElementById("postProgress");
+    this.skippedPostsEl = document.getElementById("skippedPosts"); // New element for skipped posts count
     this.successMessagesEl = document.getElementById("successMessages");
     this.errorMessagesEl = document.getElementById("errorMessages");
+
+    // Initialize skipped posts count if element exists
+    if (this.skippedPostsEl) {
+      this.skippedPostsEl.textContent = "Skipped posts: 0";
+    } else {
+      // Create it if it doesn't exist
+      this.skippedPostsEl = document.createElement("div");
+      this.skippedPostsEl.id = "skippedPosts";
+      this.skippedPostsEl.textContent = "Skipped posts: 0";
+      this.postProgressEl.parentNode.insertBefore(
+        this.skippedPostsEl,
+        this.postProgressEl.nextSibling
+      );
+    }
   }
 
   bindEvents() {
@@ -39,9 +54,21 @@ class FacebookCommenter {
             );
           }
           break;
+        case "commentSkipped":
+          // Handle skipped post notification
+          this.updateProgress(request.currentIndex, request.totalPosts);
+          this.updateSkippedPosts();
+          this.addSuccessMessage(
+            `Skipped post ${request.currentIndex}: ${request.message}`
+          );
+          break;
         case "commentingComplete":
           this.resetUI();
           this.addSuccessMessage(request.message);
+          // Update skipped posts display in completion message
+          if (request.skippedPosts > 0) {
+            this.skippedPostsEl.textContent = `Skipped posts: ${request.skippedPosts}`;
+          }
           break;
         case "commentError":
           this.addErrorMessage(request.error);
@@ -64,6 +91,10 @@ class FacebookCommenter {
         this.stopBtn.disabled = false;
 
         this.updateProgress(state.currentIndex, state.posts.length);
+        // Update skipped posts count if available
+        if (state.skippedPosts !== undefined) {
+          this.skippedPostsEl.textContent = `Skipped posts: ${state.skippedPosts}`;
+        }
         this.currentStatusEl.textContent = "Commenting in progress...";
       }
     });
@@ -78,16 +109,29 @@ class FacebookCommenter {
     const messageEl = document.createElement("div");
     messageEl.textContent = message;
     this.successMessagesEl.appendChild(messageEl);
+    // Auto-scroll to bottom
+    this.successMessagesEl.scrollTop = this.successMessagesEl.scrollHeight;
   }
 
   addErrorMessage(message) {
     const messageEl = document.createElement("div");
     messageEl.textContent = message;
     this.errorMessagesEl.appendChild(messageEl);
+    // Auto-scroll to bottom
+    this.errorMessagesEl.scrollTop = this.errorMessagesEl.scrollHeight;
   }
 
   updateProgress(current, total) {
     this.postProgressEl.textContent = `Commenting: ${current} of ${total} posts`;
+  }
+
+  updateSkippedPosts() {
+    // Get current state to update skipped posts count
+    chrome.runtime.sendMessage({ action: "getCommentingState" }, (state) => {
+      if (state && state.skippedPosts !== undefined) {
+        this.skippedPostsEl.textContent = `Skipped posts: ${state.skippedPosts}`;
+      }
+    });
   }
 
   resetUI() {
@@ -116,6 +160,9 @@ class FacebookCommenter {
       this.addErrorMessage("Please enter post URLs and comment text.");
       return;
     }
+
+    // Reset skipped posts counter
+    this.skippedPostsEl.textContent = "Skipped posts: 0";
 
     // Send message to background script to start commenting
     chrome.runtime.sendMessage(

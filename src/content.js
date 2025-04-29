@@ -1,4 +1,4 @@
-// Facebook Auto Commenter with specific Lexical Editor support
+// Facebook Auto Commenter with specific Lexical Editor support and Skip Already Commented Posts
 
 console.log("Facebook Auto Commenter content script loaded");
 const RESPONSE_TIMEOUT = 25000; // 25 seconds
@@ -59,6 +59,179 @@ async function findElementWithSelectors(selectors, timeout = 15000) {
   throw new Error(
     `None of the selectors found an element: ${errors.join(", ")}`
   );
+}
+
+// Extract the currently logged-in user's information
+function getLoggedInUserInfo() {
+  console.log("Extracting logged-in user info");
+  let userId = "";
+  let userName = "";
+
+  try {
+    // Try to extract user ID from various elements on the page
+    // Method 1: From profile link
+    const profileLinks = document.querySelectorAll('a[href*="/profile.php"]');
+    for (const link of profileLinks) {
+      const matches = link.href.match(/id=(\d+)/);
+      if (matches && matches[1]) {
+        userId = matches[1];
+        console.log(`Found user ID from profile link: ${userId}`);
+        break;
+      }
+    }
+
+    // Method 2: From other links containing user ID
+    if (!userId) {
+      const allLinks = document.querySelectorAll('a[href*="/user/"]');
+      for (const link of allLinks) {
+        const matches = link.href.match(/\/user\/(\d+)/);
+        if (matches && matches[1]) {
+          userId = matches[1];
+          console.log(`Found user ID from user link: ${userId}`);
+          break;
+        }
+      }
+    }
+
+    // Method 3: From user menu or profile area
+    const userNameElements = document.querySelectorAll('span[dir="auto"]');
+    for (const el of userNameElements) {
+      // Look for spans that might contain the username in top navigation or menu
+      if (
+        el.textContent &&
+        el.textContent.length > 0 &&
+        !el.textContent.includes("Write a") &&
+        !el.textContent.includes("Like") &&
+        !el.textContent.includes("Comment") &&
+        !el.textContent.includes("Share")
+      ) {
+        userName = el.textContent.trim();
+        console.log(`Found potential username: ${userName}`);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error("Error extracting user info:", error);
+  }
+
+  console.log(`User info: ID=${userId}, Name=${userName}`);
+  return { userId, userName };
+}
+
+// Check if the user has already commented on this post
+async function hasUserAlreadyCommented() {
+  console.log("Checking if user has already commented on this post");
+
+  try {
+    // Get logged-in user info
+    const { userId, userName } = getLoggedInUserInfo();
+
+    if (!userId && !userName) {
+      console.log(
+        "Could not determine user identity, unable to check for existing comments"
+      );
+      return false;
+    }
+
+    // Wait for post to fully load
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    // Find the main post container first to restrict our search scope
+    const postContainer = document.querySelector(
+      '[role="article"][tabindex="-1"]'
+    );
+    if (!postContainer) {
+      console.log("Could not find post container, checking whole page");
+      // Fall back to old behavior
+    }
+
+    // Method 1: Check for user ID in comment links WITHIN THE POST CONTAINER
+    if (userId && postContainer) {
+      // Restrict search to only comments within this post
+      const userCommentLinks = postContainer.querySelectorAll(
+        `a[href*="/user/${userId}"]`
+      );
+      if (userCommentLinks.length > 0) {
+        console.log(
+          `Found ${userCommentLinks.length} comments by user ID ${userId} in this post, skipping`
+        );
+        return true;
+      }
+
+      // Additional check for profile ID links
+      const profileCommentLinks = postContainer.querySelectorAll(
+        `a[href*="profile.php?id=${userId}"]`
+      );
+      if (profileCommentLinks.length > 0) {
+        console.log(
+          `Found ${profileCommentLinks.length} comments by profile ID ${userId} in this post, skipping`
+        );
+        return true;
+      }
+    } else {
+      // Fallback to searching the entire page if we can't find the post container
+      const userCommentLinks = document.querySelectorAll(
+        `a[href*="/user/${userId}"]`
+      );
+      const profileCommentLinks = document.querySelectorAll(
+        `a[href*="profile.php?id=${userId}"]`
+      );
+
+      // Log what we found for debugging
+      console.log(
+        `Found ${userCommentLinks.length} user ID links and ${profileCommentLinks.length} profile links`
+      );
+
+      // Verify these are actually comment links
+      let validCommentCount = 0;
+      [...userCommentLinks, ...profileCommentLinks].forEach((link) => {
+        // Look for parent elements that indicate this is a comment
+        const isInComment = !!link.closest('[role="article"][tabindex="-1"]');
+        if (isInComment) validCommentCount++;
+        console.log(
+          `Link ${link.href}: ${
+            isInComment ? "Is in comment" : "Not in comment"
+          }`
+        );
+      });
+
+      if (validCommentCount > 0) {
+        console.log(
+          `Found ${validCommentCount} verified comments by user, skipping post`
+        );
+        return true;
+      }
+    }
+
+    // Method 2: Check for username in comment authors as backup
+    if (userName) {
+      const commentSelector = postContainer
+        ? 'span.x193iq5w[dir="auto"]' // Within post container
+        : 'div[role="article"] span.x193iq5w[dir="auto"]'; // On whole page with article wrapper
+
+      const commentAuthorSpans = (postContainer || document).querySelectorAll(
+        commentSelector
+      );
+
+      console.log(
+        `Found ${commentAuthorSpans.length} potential comment author spans`
+      );
+
+      for (const span of commentAuthorSpans) {
+        console.log(`Checking span with text: "${span.textContent.trim()}"`);
+        if (span.textContent.trim() === userName) {
+          console.log(`Found comment by username "${userName}", skipping post`);
+          return true;
+        }
+      }
+    }
+
+    console.log("No existing comments found from current user");
+    return false;
+  } catch (error) {
+    console.error("Error checking for user comments:", error);
+    return false; // On error, proceed with commenting
+  }
 }
 
 // Find comment input
@@ -235,15 +408,28 @@ async function addComment(comment, delay) {
   });
 }
 
-// Process post
+// Process post - now with check for existing comments
 async function processPost(comment, delay) {
   try {
     console.log(`Processing post with comment: "${comment}"`);
 
     // Wait for page to load fully
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
-    // Add comment
+    // Check if the user has already commented on this post
+    const alreadyCommented = await hasUserAlreadyCommented();
+
+    if (alreadyCommented) {
+      console.log("User has already commented on this post, skipping");
+      return {
+        success: true,
+        skipped: true,
+        message: "Post already commented on",
+      };
+    }
+
+    // Add comment if not already commented
+    console.log("No existing comment found, proceeding with comment");
     await addComment(comment, delay);
 
     return { success: true };
@@ -281,15 +467,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Wait for page to load
         await new Promise((resolve) => setTimeout(resolve, 3000));
 
-        // Add comment with early response
-        await addComment(request.comment, request.delay);
+        // Process post - will check for existing comments
+        const result = await processPost(request.comment, request.delay);
 
         // Send response if not already sent
         if (!responseSent) {
-          console.log("Sending success response");
+          console.log("Sending success response:", result);
           responseSent = true;
           clearTimeout(timeoutId);
-          sendResponse({ success: true });
+          sendResponse(result);
         }
       } catch (error) {
         console.error("Error in processPost:", error);

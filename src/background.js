@@ -8,6 +8,7 @@ let commentingState = {
   comment: "",
   delay: 5,
   randomize: false,
+  skippedPosts: 0, // New counter for skipped posts
 };
 
 // Save state to storage
@@ -39,6 +40,7 @@ function resetState() {
     comment: "",
     delay: 5,
     randomize: false,
+    skippedPosts: 0,
   };
   console.log("State reset");
   return saveState();
@@ -72,11 +74,18 @@ async function processNextPost() {
       !commentingState.isCommenting ||
       commentingState.currentIndex >= commentingState.posts.length
     ) {
+      // Send complete message with skipped post info
+      const finalMessage =
+        commentingState.skippedPosts > 0
+          ? `Commenting completed. ${commentingState.skippedPosts} posts were skipped (already commented on).`
+          : "Commenting process finished successfully.";
+
       await resetState();
 
       chrome.runtime.sendMessage({
         action: "commentingComplete",
-        message: "Commenting process finished successfully.",
+        message: finalMessage,
+        skippedPosts: commentingState.skippedPosts,
       });
       return;
     }
@@ -166,14 +175,32 @@ async function processNextPost() {
 
       console.log("Response from content script or timeout:", response);
 
-      // Send progress update to popup
-      chrome.runtime.sendMessage({
-        action: "commentProgress",
-        currentIndex: commentingState.currentIndex + 1,
-        totalPosts: commentingState.posts.length,
-        success: response.success,
-        warning: response.warning,
-      });
+      // Handle skipped posts (already commented on)
+      if (response.skipped) {
+        console.log(
+          `Post ${
+            commentingState.currentIndex + 1
+          } skipped: Already commented on`
+        );
+        commentingState.skippedPosts++;
+
+        // Send skipped post notification to popup
+        chrome.runtime.sendMessage({
+          action: "commentSkipped",
+          currentIndex: commentingState.currentIndex + 1,
+          totalPosts: commentingState.posts.length,
+          message: response.message || "Post already commented on",
+        });
+      } else {
+        // Send regular progress update to popup
+        chrome.runtime.sendMessage({
+          action: "commentProgress",
+          currentIndex: commentingState.currentIndex + 1,
+          totalPosts: commentingState.posts.length,
+          success: response.success,
+          warning: response.warning,
+        });
+      }
     } catch (error) {
       console.error("Error processing post:", error);
 
@@ -220,6 +247,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         comment: request.comment,
         delay: request.delay,
         randomize: request.randomize,
+        skippedPosts: 0, // Reset skipped post counter
       };
       saveState();
 
