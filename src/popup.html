@@ -3,9 +3,92 @@
 <head>
   <title>Facebook Auto Commenter</title>
   <link rel="stylesheet" href="../styles/popup.css">
+  <style>
+    /* Inline critical styles to ensure they're applied */
+    .login-page {
+      width: 400px;
+      min-height: 300px;
+      padding: 20px;
+      box-sizing: border-box;
+      background-color: white;
+    }
+    
+    .login-form {
+      margin-top: 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    
+    .form-control {
+      margin-bottom: 15px;
+    }
+    
+    .form-control label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    
+    .form-control input[type="password"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .remember-option {
+      display: flex;
+      align-items: center;
+      margin: 15px 0;
+    }
+    
+    .login-button {
+      background-color: #1877f2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 12px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      width: 100%;
+    }
+    
+    .error-message {
+      color: #ff4d4f;
+      margin-top: 8px;
+      min-height: 20px;
+    }
+    
+    .app-container {
+      display: none;
+    }
+  </style>
 </head>
 <body>
-  <div class="container">
+  <!-- Simplified Login Screen -->
+  <div id="login-page" class="login-page">
+    <h1 style="text-align: center; color: #1877f2; margin-bottom: 20px;">Facebook Auto Commenter</h1>
+    <div class="login-form">
+      <div class="form-control">
+        <label for="password">Enter Access Password</label>
+        <input type="password" id="password" placeholder="Enter your password">
+        <div id="login-error" class="error-message"></div>
+      </div>
+      
+      <div class="remember-option">
+        <input type="checkbox" id="remember" style="margin-right: 8px;">
+        <label for="remember">Remember for 7 days</label>
+      </div>
+      
+      <button id="login-btn" class="login-button">Access Tool</button>
+    </div>
+  </div>
+
+  <!-- Main App Container -->
+  <div id="app-container" class="app-container container">
     <h1>Facebook Auto Commenter</h1>
     
     <div class="posts-section">
@@ -40,6 +123,9 @@
           <input type="checkbox" id="randomize"> Randomize comment selection
         </label>
       </div>
+      <div class="setting-row text-right">
+        <button id="logout-btn" class="text-button">Logout</button>
+      </div>
     </div>
 
     <div class="actions">
@@ -52,16 +138,26 @@
       <div id="progressContainer">
         <div id="currentStatus"></div>
         <div id="postProgress"></div>
+        <div id="skippedPosts"></div>
       </div>
     </div>
 
-    <!-- New Comment History Section -->
+    <!-- Comment History Section with count indicators -->
     <div class="history-section">
       <h2>Comment History</h2>
       <div class="tabs">
-        <button class="tab-button active" data-tab="successful">Successful</button>
-        <button class="tab-button" data-tab="skipped">Skipped</button>
-        <button class="tab-button" data-tab="failed">Failed</button>
+        <button class="tab-button active" data-tab="successful">
+          Successful
+          <span class="tab-count" id="successful-count">0</span>
+        </button>
+        <button class="tab-button" data-tab="skipped">
+          Skipped
+          <span class="tab-count" id="skipped-count">0</span>
+        </button>
+        <button class="tab-button" data-tab="failed">
+          Failed
+          <span class="tab-count" id="failed-count">0</span>
+        </button>
       </div>
       
       <div class="tab-content">
@@ -92,6 +188,8 @@
     </div>
   </div>
 
-  <script src="popup.js"></script>
+  <!-- Use type="module" for ES6 module imports -->
+  <script type="module" src="./auth.js"></script>
+  <script type="module" src="./popup.js"></script>
 </body>
 </html>

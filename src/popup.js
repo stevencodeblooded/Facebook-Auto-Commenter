@@ -1,14 +1,33 @@
 // Popup script for Facebook Auto Commenter
+import authManager from "./auth.js";
 
 class FacebookCommenter {
   constructor() {
+    // Delay initialization to ensure DOM is fully loaded
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => this.initialize());
+    } else {
+      this.initialize();
+    }
+  }
+
+  initialize() {
     this.initializeElements();
+    this.initializeAuth();
     this.bindEvents();
-    this.restoreState();
-    this.loadCommentHistory();
   }
 
   initializeElements() {
+    // Login elements
+    this.loginOverlay = document.getElementById("login-page");
+    this.appContainer = document.getElementById("app-container");
+    this.passwordInput = document.getElementById("password");
+    this.rememberCheckbox = document.getElementById("remember");
+    this.loginBtn = document.getElementById("login-btn");
+    this.logoutBtn = document.getElementById("logout-btn");
+    this.loginErrorEl = document.getElementById("login-error");
+
+    // Original elements
     this.postUrlsInput = document.getElementById("postUrls");
     this.commentTextInput = document.getElementById("commentText");
     this.delayInput = document.getElementById("delay");
@@ -20,7 +39,7 @@ class FacebookCommenter {
     this.stopBtn = document.getElementById("stopCommentingBtn");
     this.currentStatusEl = document.getElementById("currentStatus");
     this.postProgressEl = document.getElementById("postProgress");
-    this.skippedPostsEl = document.getElementById("skippedPosts"); // Element for skipped posts count
+    this.skippedPostsEl = document.getElementById("skippedPosts");
     this.successMessagesEl = document.getElementById("successMessages");
     this.errorMessagesEl = document.getElementById("errorMessages");
 
@@ -32,6 +51,19 @@ class FacebookCommenter {
     this.failedList = document.getElementById("failed-list");
     this.clearHistoryBtn = document.getElementById("clearHistoryBtn");
     this.emptyMessages = document.querySelectorAll(".empty-message");
+
+    // Count elements
+    this.successfulCountEl = document.getElementById("successful-count");
+    this.skippedCountEl = document.getElementById("skipped-count");
+    this.failedCountEl = document.getElementById("failed-count");
+
+    // Initialize count elements
+    this.successfulCountEl.textContent = "0";
+    this.skippedCountEl.textContent = "0";
+    this.failedCountEl.textContent = "0";
+    this.successfulCountEl.classList.add("empty");
+    this.skippedCountEl.classList.add("empty");
+    this.failedCountEl.classList.add("empty");
 
     // Initialize comment counter
     this.commentCounter.textContent = "1 comment detected";
@@ -54,7 +86,75 @@ class FacebookCommenter {
     }
   }
 
+  // Initialize authentication
+  async initializeAuth() {
+    // First check if remote password needs to be fetched
+    await authManager.checkRemotePassword();
+
+    // Check if user is already authenticated
+    const isAuthenticated = await authManager.isAuthenticated();
+
+    if (isAuthenticated) {
+      this.showApp();
+      this.restoreState();
+      this.loadCommentHistory();
+    } else {
+      this.showLogin();
+    }
+  }
+
+  // Show login overlay
+  showLogin() {
+    this.loginOverlay.style.display = "block";
+    this.appContainer.style.display = "none";
+    this.passwordInput.focus();
+  }
+
+  // Show main app
+  showApp() {
+    this.loginOverlay.style.display = "none";
+    this.appContainer.style.display = "block";
+  }
+
+  // Handle login
+  async handleLogin() {
+    const password = this.passwordInput.value;
+    const remember = this.rememberCheckbox.checked;
+
+    if (!password) {
+      this.loginErrorEl.textContent = "Please enter a password";
+      return;
+    }
+
+    const success = await authManager.login(password, remember);
+
+    if (success) {
+      this.showApp();
+      this.restoreState();
+      this.loadCommentHistory();
+      this.passwordInput.value = ""; // Clear password field
+      this.loginErrorEl.textContent = "";
+    } else {
+      this.loginErrorEl.textContent = "Invalid password";
+      this.passwordInput.select();
+    }
+  }
+
+  // Handle logout
+  async handleLogout() {
+    await authManager.logout();
+    this.showLogin();
+  }
+
   bindEvents() {
+    // Authentication events
+    this.loginBtn.addEventListener("click", () => this.handleLogin());
+    this.passwordInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") this.handleLogin();
+    });
+    this.logoutBtn.addEventListener("click", () => this.handleLogout());
+
+    // Original events
     this.startBtn.addEventListener("click", () => this.startCommenting());
     this.stopBtn.addEventListener("click", () => this.stopCommenting());
 
@@ -168,6 +268,46 @@ class FacebookCommenter {
     });
   }
 
+  // Update counts in tab buttons
+  updateTabCounts(successfulCount, skippedCount, failedCount) {
+    // Update successful count
+    this.successfulCountEl.textContent = successfulCount;
+    if (successfulCount > 0) {
+      this.successfulCountEl.classList.remove("empty");
+      // Add animation class for a brief moment
+      this.successfulCountEl.classList.add("updated");
+      setTimeout(() => {
+        this.successfulCountEl.classList.remove("updated");
+      }, 300);
+    } else {
+      this.successfulCountEl.classList.add("empty");
+    }
+
+    // Update skipped count
+    this.skippedCountEl.textContent = skippedCount;
+    if (skippedCount > 0) {
+      this.skippedCountEl.classList.remove("empty");
+      this.skippedCountEl.classList.add("updated");
+      setTimeout(() => {
+        this.skippedCountEl.classList.remove("updated");
+      }, 300);
+    } else {
+      this.skippedCountEl.classList.add("empty");
+    }
+
+    // Update failed count
+    this.failedCountEl.textContent = failedCount;
+    if (failedCount > 0) {
+      this.failedCountEl.classList.remove("empty");
+      this.failedCountEl.classList.add("updated");
+      setTimeout(() => {
+        this.failedCountEl.classList.remove("updated");
+      }, 300);
+    } else {
+      this.failedCountEl.classList.add("empty");
+    }
+  }
+
   // Load comment history from storage
   loadCommentHistory() {
     chrome.runtime.sendMessage({ action: "getCommentHistory" }, (history) => {
@@ -176,6 +316,10 @@ class FacebookCommenter {
         this.successfulList.innerHTML = "";
         this.skippedList.innerHTML = "";
         this.failedList.innerHTML = "";
+
+        let successfulCount = 0;
+        let skippedCount = 0;
+        let failedCount = 0;
 
         // Populate successful URLs
         if (history.successfulUrls && history.successfulUrls.length > 0) {
@@ -190,6 +334,7 @@ class FacebookCommenter {
               item.comment
             );
           });
+          successfulCount = history.successfulUrls.length;
         } else {
           document.querySelector(
             "#successful-tab .empty-message"
@@ -208,6 +353,7 @@ class FacebookCommenter {
               item.reason
             );
           });
+          skippedCount = history.skippedUrls.length;
         } else {
           document.querySelector("#skipped-tab .empty-message").style.display =
             "block";
@@ -225,10 +371,14 @@ class FacebookCommenter {
               item.reason
             );
           });
+          failedCount = history.failedUrls.length;
         } else {
           document.querySelector("#failed-tab .empty-message").style.display =
             "block";
         }
+
+        // Update tab counts
+        this.updateTabCounts(successfulCount, skippedCount, failedCount);
       }
     });
   }
@@ -300,8 +450,28 @@ class FacebookCommenter {
     // Add to UI
     this.addUrlToHistoryUI(url, type, Date.now(), comment);
 
+    // Update count in tab button
+    this.updateCountForNewItem(type);
+
     // No need to send to background as it already records this
     // This is only used for real-time UI updates during an active commenting session
+  }
+
+  // Update count when a new item is added
+  updateCountForNewItem(type) {
+    // Get current counts
+    const successfulCount = parseInt(this.successfulCountEl.textContent) || 0;
+    const skippedCount = parseInt(this.skippedCountEl.textContent) || 0;
+    const failedCount = parseInt(this.failedCountEl.textContent) || 0;
+
+    // Update the respective count
+    if (type === "successful") {
+      this.updateTabCounts(successfulCount + 1, skippedCount, failedCount);
+    } else if (type === "skipped") {
+      this.updateTabCounts(successfulCount, skippedCount + 1, failedCount);
+    } else if (type === "failed") {
+      this.updateTabCounts(successfulCount, skippedCount, failedCount + 1);
+    }
   }
 
   // Clear history
@@ -320,6 +490,9 @@ class FacebookCommenter {
             this.emptyMessages.forEach((msg) => {
               msg.style.display = "block";
             });
+
+            // Reset counts
+            this.updateTabCounts(0, 0, 0);
           }
         }
       );
@@ -534,3 +707,5 @@ class FacebookCommenter {
 document.addEventListener("DOMContentLoaded", () => {
   new FacebookCommenter();
 });
+
+export default FacebookCommenter;
