@@ -55,6 +55,37 @@
       </div>
     </div>
 
+    <!-- New Comment History Section -->
+    <div class="history-section">
+      <h2>Comment History</h2>
+      <div class="tabs">
+        <button class="tab-button active" data-tab="successful">Successful</button>
+        <button class="tab-button" data-tab="skipped">Skipped</button>
+        <button class="tab-button" data-tab="failed">Failed</button>
+      </div>
+      
+      <div class="tab-content">
+        <div id="successful-tab" class="tab-panel active">
+          <div id="successful-list" class="url-list"></div>
+          <div class="empty-message">No successful comments yet</div>
+        </div>
+        
+        <div id="skipped-tab" class="tab-panel">
+          <div id="skipped-list" class="url-list"></div>
+          <div class="empty-message">No skipped posts yet</div>
+        </div>
+        
+        <div id="failed-tab" class="tab-panel">
+          <div id="failed-list" class="url-list"></div>
+          <div class="empty-message">No failed comments yet</div>
+        </div>
+      </div>
+      
+      <div class="history-actions">
+        <button id="clearHistoryBtn" class="secondary-button">Clear History</button>
+      </div>
+    </div>
+
     <div class="message-section">
       <div id="successMessages" class="success-messages"></div>
       <div id="errorMessages" class="error-messages"></div>

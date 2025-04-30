@@ -5,6 +5,7 @@ class FacebookCommenter {
     this.initializeElements();
     this.bindEvents();
     this.restoreState();
+    this.loadCommentHistory();
   }
 
   initializeElements() {
@@ -22,6 +23,15 @@ class FacebookCommenter {
     this.skippedPostsEl = document.getElementById("skippedPosts"); // Element for skipped posts count
     this.successMessagesEl = document.getElementById("successMessages");
     this.errorMessagesEl = document.getElementById("errorMessages");
+
+    // History elements
+    this.tabButtons = document.querySelectorAll(".tab-button");
+    this.tabPanels = document.querySelectorAll(".tab-panel");
+    this.successfulList = document.getElementById("successful-list");
+    this.skippedList = document.getElementById("skipped-list");
+    this.failedList = document.getElementById("failed-list");
+    this.clearHistoryBtn = document.getElementById("clearHistoryBtn");
+    this.emptyMessages = document.querySelectorAll(".empty-message");
 
     // Initialize comment counter
     this.commentCounter.textContent = "1 comment detected";
@@ -62,6 +72,17 @@ class FacebookCommenter {
       this.updateCommentCount();
     });
 
+    // Tab switching in history section
+    this.tabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const tabName = button.getAttribute("data-tab");
+        this.switchTab(tabName);
+      });
+    });
+
+    // Clear history button
+    this.clearHistoryBtn.addEventListener("click", () => this.clearHistory());
+
     // Listen for messages from background script
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       switch (request.action) {
@@ -71,10 +92,26 @@ class FacebookCommenter {
             this.addSuccessMessage(
               `Successfully commented on post ${request.currentIndex}: "${request.usedComment}"`
             );
+            // Add to successful URLs in UI
+            if (request.url) {
+              this.addUrlToHistory(
+                request.url,
+                "successful",
+                request.usedComment
+              );
+            }
           } else {
             this.addErrorMessage(
               `Failed to comment on post ${request.currentIndex}`
             );
+            // Add to failed URLs in UI
+            if (request.url) {
+              this.addUrlToHistory(
+                request.url,
+                "failed",
+                request.error || "Unknown error"
+              );
+            }
           }
           break;
         case "commentSkipped":
@@ -84,6 +121,10 @@ class FacebookCommenter {
           this.addSuccessMessage(
             `Skipped post ${request.currentIndex}: ${request.message}`
           );
+          // Add to skipped URLs in UI
+          if (request.url) {
+            this.addUrlToHistory(request.url, "skipped", request.message);
+          }
           break;
         case "commentingComplete":
           this.resetUI();
@@ -92,11 +133,240 @@ class FacebookCommenter {
           if (request.skippedPosts > 0) {
             this.skippedPostsEl.textContent = `Skipped posts: ${request.skippedPosts}`;
           }
+          // Refresh history to show the latest
+          this.loadCommentHistory();
           break;
         case "commentError":
           this.addErrorMessage(request.error);
+          // Add to failed URLs in UI if URL is provided
+          if (request.url) {
+            this.addUrlToHistory(request.url, "failed", request.error);
+          }
           break;
       }
+    });
+  }
+
+  // Switch between tabs in history section
+  switchTab(tabName) {
+    // Update tab buttons
+    this.tabButtons.forEach((button) => {
+      if (button.getAttribute("data-tab") === tabName) {
+        button.classList.add("active");
+      } else {
+        button.classList.remove("active");
+      }
+    });
+
+    // Update tab panels
+    this.tabPanels.forEach((panel) => {
+      if (panel.id === `${tabName}-tab`) {
+        panel.classList.add("active");
+      } else {
+        panel.classList.remove("active");
+      }
+    });
+  }
+
+  // Load comment history from storage
+  loadCommentHistory() {
+    chrome.runtime.sendMessage({ action: "getCommentHistory" }, (history) => {
+      if (history) {
+        // Clear existing lists
+        this.successfulList.innerHTML = "";
+        this.skippedList.innerHTML = "";
+        this.failedList.innerHTML = "";
+
+        // Populate successful URLs
+        if (history.successfulUrls && history.successfulUrls.length > 0) {
+          document.querySelector(
+            "#successful-tab .empty-message"
+          ).style.display = "none";
+          history.successfulUrls.forEach((item) => {
+            this.addUrlToHistoryUI(
+              item.url,
+              "successful",
+              item.timestamp,
+              item.comment
+            );
+          });
+        } else {
+          document.querySelector(
+            "#successful-tab .empty-message"
+          ).style.display = "block";
+        }
+
+        // Populate skipped URLs
+        if (history.skippedUrls && history.skippedUrls.length > 0) {
+          document.querySelector("#skipped-tab .empty-message").style.display =
+            "none";
+          history.skippedUrls.forEach((item) => {
+            this.addUrlToHistoryUI(
+              item.url,
+              "skipped",
+              item.timestamp,
+              item.reason
+            );
+          });
+        } else {
+          document.querySelector("#skipped-tab .empty-message").style.display =
+            "block";
+        }
+
+        // Populate failed URLs
+        if (history.failedUrls && history.failedUrls.length > 0) {
+          document.querySelector("#failed-tab .empty-message").style.display =
+            "none";
+          history.failedUrls.forEach((item) => {
+            this.addUrlToHistoryUI(
+              item.url,
+              "failed",
+              item.timestamp,
+              item.reason
+            );
+          });
+        } else {
+          document.querySelector("#failed-tab .empty-message").style.display =
+            "block";
+        }
+      }
+    });
+  }
+
+  // Add URL to history list in UI
+  addUrlToHistoryUI(url, type, timestamp, comment) {
+    const list =
+      type === "successful"
+        ? this.successfulList
+        : type === "skipped"
+        ? this.skippedList
+        : this.failedList;
+
+    const urlItem = document.createElement("div");
+    urlItem.className = "url-item";
+
+    const urlRow = document.createElement("div");
+    urlRow.className = "url-row";
+
+    const urlLink = document.createElement("a");
+    urlLink.href = url;
+    urlLink.target = "_blank";
+    urlLink.title = url;
+
+    // Truncate URL for display
+    const displayUrl = this.truncateUrl(url);
+    urlLink.textContent = displayUrl;
+
+    const timeSpan = document.createElement("span");
+    timeSpan.className = "time";
+    timeSpan.textContent = this.formatTimestamp(timestamp);
+
+    urlRow.appendChild(urlLink);
+    urlRow.appendChild(timeSpan);
+    urlItem.appendChild(urlRow);
+
+    // Add status indicator based on type
+    const statusIndicator = document.createElement("span");
+    if (type === "successful") {
+      statusIndicator.className = "status-success";
+      urlLink.prepend(statusIndicator);
+    } else if (type === "skipped") {
+      statusIndicator.className = "status-warning";
+      urlLink.prepend(statusIndicator);
+    } else {
+      statusIndicator.className = "status-error";
+      urlLink.prepend(statusIndicator);
+    }
+
+    // Add comment or reason if available
+    if (comment) {
+      const commentDiv = document.createElement("div");
+      commentDiv.className = type === "successful" ? "comment" : "reason";
+      commentDiv.textContent = type === "successful" ? `"${comment}"` : comment;
+      urlItem.appendChild(commentDiv);
+    }
+
+    list.appendChild(urlItem);
+
+    // Hide empty message
+    const emptyMessage = list.parentNode.querySelector(".empty-message");
+    if (emptyMessage) {
+      emptyMessage.style.display = "none";
+    }
+  }
+
+  // Add URL to history (both UI and background)
+  addUrlToHistory(url, type, comment) {
+    // Add to UI
+    this.addUrlToHistoryUI(url, type, Date.now(), comment);
+
+    // No need to send to background as it already records this
+    // This is only used for real-time UI updates during an active commenting session
+  }
+
+  // Clear history
+  clearHistory() {
+    if (confirm("Are you sure you want to clear your comment history?")) {
+      chrome.runtime.sendMessage(
+        { action: "clearCommentHistory" },
+        (response) => {
+          if (response.success) {
+            // Clear UI
+            this.successfulList.innerHTML = "";
+            this.skippedList.innerHTML = "";
+            this.failedList.innerHTML = "";
+
+            // Show empty messages
+            this.emptyMessages.forEach((msg) => {
+              msg.style.display = "block";
+            });
+          }
+        }
+      );
+    }
+  }
+
+  // Helper to truncate long URLs
+  truncateUrl(url) {
+    const maxLength = 40;
+    if (url.length <= maxLength) return url;
+
+    // Remove http/https and www
+    let cleaned = url.replace(/^(https?:\/\/)?(www\.)?/, "");
+
+    // If still too long, truncate the middle
+    if (cleaned.length > maxLength) {
+      const start = cleaned.substring(0, maxLength / 2 - 2);
+      const end = cleaned.substring(cleaned.length - maxLength / 2 + 2);
+      return start + "..." + end;
+    }
+
+    return cleaned;
+  }
+
+  // Format timestamp to readable date/time
+  formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+
+    // If today, show time only
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+
+    // If this year, show date without year
+    if (date.getFullYear() === now.getFullYear()) {
+      return date.toLocaleDateString([], { month: "short", day: "numeric" });
+    }
+
+    // Otherwise show full date
+    return date.toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+      year: "2-digit",
     });
   }
 

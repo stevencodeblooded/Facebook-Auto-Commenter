@@ -6,6 +6,8 @@
   --success-hover: #36a420;
   --danger-color: #ff4d4f;
   --danger-hover: #ff7875;
+  --warning-color: #faad14;
+  --warning-hover: #e8a010;
   --text-primary: #1c1e21;
   --text-secondary: #65676b;
   --border-color: #dddfe2;
@@ -30,6 +32,7 @@ body {
   padding: 0;
   line-height: 1.5;
   font-size: 14px;
+  overflow: hidden; /* Prevent body scrolling */
 }
 
 .container {
@@ -37,8 +40,10 @@ body {
   flex-direction: column;
   gap: 16px;
   padding: 20px;
-  max-height: 600px;
-  overflow-y: auto;
+  height: 600px; /* Fixed height */
+  overflow-y: auto; /* Enable vertical scrolling for the entire container */
+  overflow-x: hidden; /* Prevent horizontal scrolling */
+  box-sizing: border-box;
 }
 
 /* Typography */
@@ -90,6 +95,7 @@ h2::before {
 .settings-section,
 .actions,
 .progress-section,
+.history-section,
 .message-section {
   background-color: var(--bg-primary);
   border-radius: var(--radius-md);
@@ -101,7 +107,8 @@ h2::before {
 
 .posts-section:hover,
 .comment-section:hover,
-.settings-section:hover {
+.settings-section:hover,
+.history-section:hover {
   box-shadow: var(--shadow-md);
 }
 
@@ -259,6 +266,16 @@ button:active:not(:disabled) {
   font-size: 12px;
 }
 
+.secondary-button {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.secondary-button:hover:not(:disabled) {
+  background-color: #e4e6eb;
+}
+
 button:disabled {
   background-color: #cccccc;
   cursor: not-allowed;
@@ -288,6 +305,117 @@ button:disabled {
   gap: 8px;
 }
 
+/* History Section */
+.history-section {
+  margin-top: 10px;
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 15px;
+}
+
+.tab-button {
+  padding: 8px 15px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  box-shadow: none;
+}
+
+.tab-button:hover {
+  color: var(--primary-color);
+}
+
+.tab-button.active {
+  color: var(--primary-color);
+  border-bottom: 3px solid var(--primary-color);
+}
+
+.tab-panel {
+  display: none;
+  max-height: 150px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.url-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.url-item {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  transition: background-color 0.2s ease;
+  gap: 4px;
+}
+
+.url-item:hover {
+  background-color: #e4e6eb;
+}
+
+.url-item .url-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.url-item a {
+  color: var(--primary-color);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 280px;
+}
+
+.url-item a:hover {
+  text-decoration: underline;
+}
+
+.url-item .time {
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.url-item .comment, .url-item .reason {
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.empty-message {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 15px;
+  font-style: italic;
+  font-size: 13px;
+  display: none;
+}
+
+.history-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
 /* Message Section */
 .message-section {
   max-height: 150px;
@@ -302,24 +430,22 @@ button:disabled {
   padding: 8px 0;
 }
 
-/* Success and Error Messages */
-.success-message, 
-.error-message {
+.success-messages div, 
+.error-messages div {
   padding: 8px 12px;
   margin-bottom: 8px;
   border-radius: var(--radius-sm);
   font-size: 13px;
   animation: fadeIn 0.3s ease;
-  position: relative;
 }
 
-.success-message {
+.success-messages div {
   background-color: rgba(66, 183, 42, 0.1);
   border-left: 3px solid var(--success-color);
   color: #2b7d1a;
 }
 
-.error-message {
+.error-messages div {
   background-color: rgba(255, 77, 79, 0.1);
   border-left: 3px solid var(--danger-color);
   color: #cf1322;
@@ -345,6 +471,34 @@ button:disabled {
   border-left: 3px solid var(--primary-color);
 }
 
+/* Status indicators */
+.status-success {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: var(--success-color);
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.status-warning {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: var(--warning-color);
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.status-error {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: var(--danger-color);
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
 /* Animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(5px); }
@@ -355,40 +509,6 @@ button:disabled {
   0% { opacity: 1; }
   50% { opacity: 0.6; }
   100% { opacity: 1; }
-}
-
-/* Status indicators */
-.status-running {
-  animation: pulse 1.5s infinite;
-  color: var(--primary-color);
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-running::before {
-  content: "•";
-  font-size: 18px;
-  animation: pulse 1.5s infinite;
-}
-
-.status-completed {
-  color: var(--success-color);
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-completed::before {
-  content: "✓";
-  font-size: 14px;
-}
-
-.status-skipped {
-  color: var(--text-secondary);
-  font-style: italic;
 }
 
 /* Scrollbar styling */

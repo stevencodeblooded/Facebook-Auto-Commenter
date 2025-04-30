@@ -15,10 +15,26 @@ let commentingState = {
   usedCommentIndices: [], // Track which comments have been used (for non-repeat random)
 };
 
+// Comment history for tracking success/failure of URLs
+let commentHistory = {
+  successfulUrls: [], // {url, timestamp, comment}
+  failedUrls: [], // {url, timestamp, reason}
+  skippedUrls: [], // {url, timestamp, reason}
+};
+
+// Maximum number of URLs to store in history
+const MAX_HISTORY_ITEMS = 50;
+
 // Save state to storage
 function saveState() {
   console.log("Saving state:", commentingState);
   return chrome.storage.local.set({ commentingState });
+}
+
+// Save comment history to storage
+function saveCommentHistory() {
+  console.log("Saving comment history:", commentHistory);
+  return chrome.storage.local.set({ commentHistory });
 }
 
 // Load state from storage
@@ -33,6 +49,80 @@ async function loadState() {
     console.error("Error loading state:", error);
   }
   return commentingState;
+}
+
+// Load comment history from storage
+async function loadCommentHistory() {
+  try {
+    const result = await chrome.storage.local.get(["commentHistory"]);
+    if (result.commentHistory) {
+      commentHistory = result.commentHistory;
+      console.log("Loaded comment history:", commentHistory);
+    }
+  } catch (error) {
+    console.error("Error loading comment history:", error);
+  }
+  return commentHistory;
+}
+
+// Record successful comment
+function recordSuccessfulComment(url, comment) {
+  // Add to the beginning of the array
+  commentHistory.successfulUrls.unshift({
+    url: url,
+    timestamp: Date.now(),
+    comment: comment,
+  });
+
+  // Trim array if it gets too large
+  if (commentHistory.successfulUrls.length > MAX_HISTORY_ITEMS) {
+    commentHistory.successfulUrls = commentHistory.successfulUrls.slice(
+      0,
+      MAX_HISTORY_ITEMS
+    );
+  }
+
+  saveCommentHistory();
+}
+
+// Record failed comment
+function recordFailedComment(url, reason) {
+  // Add to the beginning of the array
+  commentHistory.failedUrls.unshift({
+    url: url,
+    timestamp: Date.now(),
+    reason: reason,
+  });
+
+  // Trim array if it gets too large
+  if (commentHistory.failedUrls.length > MAX_HISTORY_ITEMS) {
+    commentHistory.failedUrls = commentHistory.failedUrls.slice(
+      0,
+      MAX_HISTORY_ITEMS
+    );
+  }
+
+  saveCommentHistory();
+}
+
+// Record skipped post
+function recordSkippedPost(url, reason) {
+  // Add to the beginning of the array
+  commentHistory.skippedUrls.unshift({
+    url: url,
+    timestamp: Date.now(),
+    reason: reason,
+  });
+
+  // Trim array if it gets too large
+  if (commentHistory.skippedUrls.length > MAX_HISTORY_ITEMS) {
+    commentHistory.skippedUrls = commentHistory.skippedUrls.slice(
+      0,
+      MAX_HISTORY_ITEMS
+    );
+  }
+
+  saveCommentHistory();
 }
 
 // Reset state
@@ -133,6 +223,9 @@ function generateCommentVariation(baseComment, randomize) {
   return comment;
 }
 
+// Store the active tab when commenting starts
+let startingTabId = null;
+
 // Process next post with improved navigation and reliability
 async function processNextPost() {
   try {
@@ -171,24 +264,65 @@ async function processNextPost() {
     console.log(`Selected comment: "${selectedComment}"`);
 
     try {
-      // Find or create a Facebook tab
+      // Find the best tab to use for processing
       let targetTab;
-      const facebookTabs = await chrome.tabs.query({
-        url: "https://www.facebook.com/*",
-      });
+      let shouldUseStartingTab = false;
 
-      if (facebookTabs.length > 0) {
-        // Use existing Facebook tab
-        targetTab = facebookTabs[0];
-        console.log("Using existing Facebook tab:", targetTab.id);
-
-        // Navigate to the post URL
-        await chrome.tabs.update(targetTab.id, { url: currentUrl });
-      } else {
-        // Create new tab if no Facebook tab exists
-        console.log("Creating new Facebook tab");
-        targetTab = await chrome.tabs.create({ url: currentUrl });
+      // First, check if startingTabId is still valid
+      if (startingTabId) {
+        try {
+          const startingTab = await chrome.tabs.get(startingTabId);
+          if (startingTab) {
+            shouldUseStartingTab = true;
+            targetTab = startingTab;
+            console.log(
+              "Using the same tab where the process started:",
+              startingTabId
+            );
+          }
+        } catch (error) {
+          console.log("Starting tab no longer exists, will find another tab");
+          startingTabId = null;
+        }
       }
+
+      // If we can't use the starting tab, find an existing Facebook tab
+      if (!shouldUseStartingTab) {
+        const facebookTabs = await chrome.tabs.query({
+          url: "https://www.facebook.com/*",
+        });
+
+        if (facebookTabs.length > 0) {
+          // Use existing Facebook tab
+          targetTab = facebookTabs[0];
+          console.log("Using existing Facebook tab:", targetTab.id);
+        } else {
+          // If no Facebook tab exists, check for a normal browsing tab
+          const allTabs = await chrome.tabs.query({ currentWindow: true });
+          const normalTab = allTabs.find(
+            (tab) =>
+              !tab.url.startsWith("chrome:") &&
+              !tab.url.startsWith("chrome-extension:") &&
+              !tab.url.startsWith("devtools:")
+          );
+
+          if (normalTab) {
+            // Use an existing normal tab instead of creating a new one
+            targetTab = normalTab;
+            console.log("Using existing normal browsing tab:", targetTab.id);
+          } else {
+            // Create new tab only as last resort
+            console.log("Creating new tab as last resort");
+            targetTab = await chrome.tabs.create({ url: currentUrl });
+            // Update immediately to prevent waiting for creation
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            return processNextPost(); // Restart this post processing
+          }
+        }
+      }
+
+      // Navigate to the post URL
+      await chrome.tabs.update(targetTab.id, { url: currentUrl });
 
       // Wait for page load and Facebook to initialize
       console.log("Waiting for page to load completely...");
@@ -251,19 +385,30 @@ async function processNextPost() {
         );
         commentingState.skippedPosts++;
 
+        // Record skipped URL
+        recordSkippedPost(
+          currentUrl,
+          response.message || "Already commented on"
+        );
+
         // Send skipped post notification to popup
         chrome.runtime.sendMessage({
           action: "commentSkipped",
           currentIndex: commentingState.currentIndex + 1,
           totalPosts: commentingState.posts.length,
+          url: currentUrl,
           message: response.message || "Post already commented on",
         });
       } else {
+        // Record successful comment
+        recordSuccessfulComment(currentUrl, selectedComment);
+
         // Send regular progress update to popup
         chrome.runtime.sendMessage({
           action: "commentProgress",
           currentIndex: commentingState.currentIndex + 1,
           totalPosts: commentingState.posts.length,
+          url: currentUrl,
           success: response.success,
           warning: response.warning,
           usedComment: selectedComment, // Send the comment that was used
@@ -272,9 +417,14 @@ async function processNextPost() {
     } catch (error) {
       console.error("Error processing post:", error);
 
+      // Record failed comment
+      recordFailedComment(currentUrl, error.message);
+
       // Send error message to popup
       chrome.runtime.sendMessage({
         action: "commentError",
+        currentIndex: commentingState.currentIndex + 1,
+        url: currentUrl,
         error: `Error on post ${commentingState.currentIndex + 1}: ${
           error.message
         }`,
@@ -307,6 +457,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.action) {
     case "startCommenting":
       console.log("Starting commenting process");
+
+      // Store the active tab ID when starting to comment
+      chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+        if (tabs.length > 0) {
+          startingTabId = tabs[0].id;
+          console.log("Stored starting tab ID:", startingTabId);
+        }
+      });
+
       // Initialize commenting state with user inputs
       commentingState = {
         isCommenting: true,
@@ -342,6 +501,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse(state);
       });
       return true;
+
+    case "getCommentHistory":
+      console.log("Returning comment history to popup");
+      loadCommentHistory().then((history) => {
+        sendResponse(history);
+      });
+      return true;
+
+    case "clearCommentHistory":
+      console.log("Clearing comment history");
+      commentHistory = {
+        successfulUrls: [],
+        failedUrls: [],
+        skippedUrls: [],
+      };
+      saveCommentHistory().then(() => {
+        sendResponse({ success: true });
+      });
+      return true;
   }
 });
 
@@ -349,10 +527,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Facebook Auto Commenter installed or updated");
   resetState();
+
+  // Initialize comment history
+  chrome.storage.local.get(["commentHistory"], (result) => {
+    if (!result.commentHistory) {
+      commentHistory = {
+        successfulUrls: [],
+        failedUrls: [],
+        skippedUrls: [],
+      };
+      saveCommentHistory();
+    }
+  });
 });
 
 // Ensure extension remains active
 chrome.runtime.onStartup.addListener(() => {
   console.log("Extension started up");
   loadState();
+  loadCommentHistory();
 });
