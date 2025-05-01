@@ -232,22 +232,45 @@ async function processNextPost() {
     await loadState();
 
     // Check if we're done or stopped
+    // Check if we're done or stopped
     if (
       !commentingState.isCommenting ||
       commentingState.currentIndex >= commentingState.posts.length
     ) {
-      // Send complete message with skipped post info
+      // Load comment history to get accurate counts
+      const history = await loadCommentHistory();
+
+      // Count successful, failed, and skipped posts for this session
+      // We're focusing just on the most recent entries that match this session's count
+      const currentSessionCount = commentingState.posts.length;
+
+      // Calculate successful posts (posts that were actually commented on)
+      const successfulCount =
+        commentingState.currentIndex - commentingState.skippedPosts;
+
+      // Failed posts (difference between total and successful+skipped)
+      const failedCount =
+        currentSessionCount - successfulCount - commentingState.skippedPosts;
+
+      // Send complete message with full stats
       const finalMessage =
         commentingState.skippedPosts > 0
-          ? `Commenting completed. ${commentingState.skippedPosts} posts were skipped (already commented on).`
+          ? `Commenting completed. ${successfulCount} posts were commented on successfully, ${commentingState.skippedPosts} posts were skipped (already commented on).`
           : "Commenting process finished successfully.";
 
+      // Save the current state for reference before resetting
+      const skippedPosts = commentingState.skippedPosts;
+
+      // Now reset the state
       await resetState();
 
+      // Send enhanced message with counts
       chrome.runtime.sendMessage({
         action: "commentingComplete",
         message: finalMessage,
-        skippedPosts: commentingState.skippedPosts,
+        successfulCount: successfulCount,
+        failedCount: failedCount,
+        skippedPosts: skippedPosts,
       });
       return;
     }

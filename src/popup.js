@@ -15,6 +15,8 @@ class FacebookCommenter {
     this.initializeElements();
     this.initializeAuth();
     this.bindEvents();
+    this.completionModal = document.getElementById("completionModal");
+    this.closeCompletionBtn = document.getElementById("closeCompletionModal");
   }
 
   initializeElements() {
@@ -146,6 +148,64 @@ class FacebookCommenter {
     this.showLogin();
   }
 
+  // Show completion modal with summary
+  showCompletionModal(stats) {
+    console.log("Showing completion modal with stats:", stats);
+    const modal = document.getElementById("completionModal");
+    const summary = document.getElementById("completionSummary");
+
+    // Create summary content
+    let summaryHTML = `<p>Commenting process completed successfully!</p><div class="completion-stats">`;
+
+    // Only add stats with values > 0
+    if (stats.successful > 0) {
+      summaryHTML += `
+      <div class="stat-item stat-success">
+        <span>Successful:</span>
+        <span class="stat-count">${stats.successful}</span>
+      </div>`;
+    }
+
+    if (stats.skipped > 0) {
+      summaryHTML += `
+      <div class="stat-item stat-warning">
+        <span>Skipped:</span>
+        <span class="stat-count">${stats.skipped}</span>
+      </div>`;
+    }
+
+    if (stats.failed > 0) {
+      summaryHTML += `
+      <div class="stat-item stat-error">
+        <span>Failed:</span>
+        <span class="stat-count">${stats.failed}</span>
+      </div>`;
+    }
+
+    summaryHTML += `</div>`;
+    summary.innerHTML = summaryHTML;
+
+    // Show the modal with animation
+    modal.classList.add("visible");
+
+    // Add event listeners to close modal
+    const closeBtn = document.getElementById("closeCompletionModal");
+    closeBtn.addEventListener("click", () => this.closeCompletionModal());
+
+    // Close when clicking outside the modal
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        this.closeCompletionModal();
+      }
+    });
+  }
+
+  // Close the completion modal
+  closeCompletionModal() {
+    const modal = document.getElementById("completionModal");
+    modal.classList.remove("visible");
+  }
+
   bindEvents() {
     // Authentication events
     this.loginBtn.addEventListener("click", () => this.handleLogin());
@@ -226,22 +286,54 @@ class FacebookCommenter {
             this.addUrlToHistory(request.url, "skipped", request.message);
           }
           break;
-        case "commentingComplete":
-          this.resetUI();
-          this.addSuccessMessage(request.message);
-          // Update skipped posts display in completion message
-          if (request.skippedPosts > 0) {
-            this.skippedPostsEl.textContent = `Skipped posts: ${request.skippedPosts}`;
-          }
-          // Refresh history to show the latest
-          this.loadCommentHistory();
-          break;
         case "commentError":
           this.addErrorMessage(request.error);
           // Add to failed URLs in UI if URL is provided
           if (request.url) {
             this.addUrlToHistory(request.url, "failed", request.error);
           }
+          break;
+        case "commentingComplete":
+          console.log("Received completion message:", request);
+          this.resetUI();
+          this.addSuccessMessage(request.message);
+
+          // Update skipped posts display in completion message
+          if (request.skippedPosts > 0) {
+            this.skippedPostsEl.textContent = `Skipped posts: ${request.skippedPosts}`;
+          }
+
+          // Get the final counts for the completion modal
+          chrome.runtime.sendMessage(
+            { action: "getCommentHistory" },
+            (history) => {
+              if (history) {
+                // Calculate counts from latest history
+                const successfulCount = history.successfulUrls
+                  ? history.successfulUrls.length
+                  : 0;
+                const skippedCount = history.skippedUrls
+                  ? history.skippedUrls.length
+                  : 0;
+                const failedCount = history.failedUrls
+                  ? history.failedUrls.length
+                  : 0;
+
+                // Get counts from current session only (if available in request)
+                const sessionStats = {
+                  successful: request.successfulCount || successfulCount,
+                  skipped: request.skippedPosts || skippedCount,
+                  failed: request.failedCount || failedCount,
+                };
+
+                // Show completion modal with stats
+                this.showCompletionModal(sessionStats);
+              }
+            }
+          );
+
+          // Refresh history to show the latest
+          this.loadCommentHistory();
           break;
       }
     });

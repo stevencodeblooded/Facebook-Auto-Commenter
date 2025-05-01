@@ -188,6 +188,22 @@
     </div>
   </div>
 
+  <!-- Completion Modal Overlay -->
+  <div id="completionModal" class="completion-modal-overlay">
+    <div class="completion-modal">
+      <div class="completion-header">
+        <h3>Commenting Complete</h3>
+        <button id="closeCompletionModal" class="close-button">&times;</button>
+      </div>
+      <div class="completion-content">
+        <div class="completion-icon">✓</div>
+        <div id="completionSummary" class="completion-summary">
+          <!-- Summary content will be dynamically populated -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Use type="module" for ES6 module imports -->
   <script type="module" src="./auth.js"></script>
   <script type="module" src="./popup.js"></script>
