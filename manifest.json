@@ -6,6 +6,7 @@
   "permissions": ["storage", "tabs", "scripting"],
   "host_permissions": [
     "https://web.facebook.com/*",
+    "https://www.facebook.com/*",
     "https://raw.githubusercontent.com/*"
   ],
   "background": {
@@ -26,7 +27,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://web.facebook.com/*"],
+      "matches": ["https://web.facebook.com/*", "https://www.facebook.com/*"],
       "js": ["src/content.js"],
       "run_at": "document_idle"
     }

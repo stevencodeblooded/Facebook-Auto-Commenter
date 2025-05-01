@@ -289,7 +289,7 @@ async function processNextPost() {
       // If we can't use the starting tab, find an existing Facebook tab
       if (!shouldUseStartingTab) {
         const facebookTabs = await chrome.tabs.query({
-          url: "https://web.facebook.com/*",
+          url: ["https://web.facebook.com/*", "https://www.facebook.com/*"],
         });
 
         if (facebookTabs.length > 0) {
