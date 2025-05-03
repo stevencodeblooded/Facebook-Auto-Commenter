@@ -198,12 +198,62 @@ class FacebookCommenter {
         this.closeCompletionModal();
       }
     });
+
+    // Clear the form data on successful completion
+    this.clearFormData();
   }
 
   // Close the completion modal
   closeCompletionModal() {
     const modal = document.getElementById("completionModal");
     modal.classList.remove("visible");
+  }
+
+  // Save form data to storage
+  saveFormData() {
+    const formData = {
+      postUrls: this.postUrlsInput.value,
+      commentText: this.commentTextInput.value,
+      delay: this.delayInput.value,
+      randomize: this.randomizeCheckbox.checked,
+      multiCommentMode: this.multiCommentModeCheckbox.checked,
+    };
+
+    chrome.storage.local.set({ formData });
+    console.log("Form data saved:", formData);
+  }
+
+  // Load form data from storage
+  async loadFormData() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(["formData"], (result) => {
+        if (result.formData) {
+          console.log("Loaded form data:", result.formData);
+          this.postUrlsInput.value = result.formData.postUrls || "";
+          this.commentTextInput.value = result.formData.commentText || "";
+          this.delayInput.value = result.formData.delay || 5;
+          this.randomizeCheckbox.checked = result.formData.randomize || false;
+          this.multiCommentModeCheckbox.checked =
+            result.formData.multiCommentMode || false;
+
+          // Update comment instructions visibility based on multiCommentMode
+          this.commentInstructions.style.display = this.multiCommentModeCheckbox
+            .checked
+            ? "block"
+            : "none";
+
+          // Update comment count
+          this.updateCommentCount();
+        }
+        resolve();
+      });
+    });
+  }
+
+  // Clear form data from storage
+  clearFormData() {
+    chrome.storage.local.remove(["formData"]);
+    console.log("Form data cleared");
   }
 
   bindEvents() {
@@ -219,8 +269,16 @@ class FacebookCommenter {
     this.stopBtn.addEventListener("click", () => this.stopCommenting());
 
     // Listen for changes in the comment text area to update comment count
-    this.commentTextInput.addEventListener("input", () =>
-      this.updateCommentCount()
+    this.commentTextInput.addEventListener("input", () => {
+      this.updateCommentCount();
+      this.saveFormData();
+    });
+
+    // Add save form data on input changes
+    this.postUrlsInput.addEventListener("input", () => this.saveFormData());
+    this.delayInput.addEventListener("change", () => this.saveFormData());
+    this.randomizeCheckbox.addEventListener("change", () =>
+      this.saveFormData()
     );
 
     // Toggle multi-comment mode
@@ -230,6 +288,7 @@ class FacebookCommenter {
         ? "block"
         : "none";
       this.updateCommentCount();
+      this.saveFormData();
     });
 
     // Tab switching in history section
@@ -658,7 +717,10 @@ class FacebookCommenter {
     } detected`;
   }
 
-  restoreState() {
+  async restoreState() {
+    // Load the saved form data first
+    await this.loadFormData();
+
     // Retrieve current commenting state when popup is opened
     chrome.runtime.sendMessage({ action: "getCommentingState" }, (state) => {
       if (state && state.isCommenting) {
@@ -734,6 +796,9 @@ class FacebookCommenter {
     this.stopBtn.disabled = true;
     this.currentStatusEl.textContent = "Commenting finished.";
     this.postProgressEl.textContent = "";
+
+    // We DO NOT clear form fields here anymore
+    // Those will only be cleared after successful completion via the showCompletionModal function
   }
 
   startCommenting() {
@@ -759,6 +824,9 @@ class FacebookCommenter {
       this.addErrorMessage("Please enter post URLs and comment text.");
       return;
     }
+
+    // Save the form data before starting commenting process
+    this.saveFormData();
 
     // Reset skipped posts counter
     this.skippedPostsEl.textContent = "Skipped posts: 0";
@@ -790,6 +858,9 @@ class FacebookCommenter {
       if (response.success) {
         this.resetUI();
         this.addErrorMessage("Commenting process was manually stopped.");
+
+        // We don't clear form data when manually stopped
+        // This allows the user to resume with the same inputs later
       }
     });
   }

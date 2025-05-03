@@ -207,20 +207,8 @@ function selectNextComment() {
 
 // Generate comment variation if randomize is enabled
 function generateCommentVariation(baseComment, randomize) {
-  if (!randomize) return baseComment;
-
-  const variations = [
-    `${baseComment} 👍`,
-    `✨ ${baseComment}`,
-    `${baseComment} 🔥`,
-    `Interesting: ${baseComment}`,
-    `${baseComment} 😊`,
-    `Great! ${baseComment}`,
-    `${baseComment} ⭐️`,
-  ];
-  const comment = variations[Math.floor(Math.random() * variations.length)];
-  console.log("Generated random comment variation:", comment);
-  return comment;
+  // Just return the original comment without any modifications
+  return baseComment;
 }
 
 // Store the active tab when commenting starts
