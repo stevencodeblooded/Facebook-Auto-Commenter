@@ -199,104 +199,104 @@ async function hasUserAlreadyCommented() {
   try {
     // Get logged-in user info
     const { userId, userName } = getLoggedInUserInfo();
+    console.log(`Working with user info: ID=${userId}, Name=${userName}`);
 
     if (!userId && !userName) {
-      console.log(
-        "Could not determine user identity, unable to check for existing comments"
-      );
+      console.log("Could not determine user identity, unable to check for existing comments");
       return false;
     }
 
-    // Wait longer for post and comments to fully load
+    // Wait for post and comments to fully load
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
-    // Try to find "View more comments" button and click it to load more comments
-    try {
-      const viewMoreButtons = document.querySelectorAll(
-        'div[role="button"][tabindex="0"]'
-      );
-      for (const button of viewMoreButtons) {
-        if (
-          button.textContent &&
-          (button.textContent.includes("View") ||
-            button.textContent.includes("more comment"))
-        ) {
-          console.log(
-            "Clicking 'View more comments' button to load all comments"
-          );
-          button.click();
-          // Wait for comments to load
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          break;
+    // Try to expand all comments if possible
+    await expandAllComments();
+
+    // STEP 1: First identify all genuine comment containers
+    const commentContainers = Array.from(document.querySelectorAll('div[role="article"]')).filter(container => {
+      // Only consider elements that actually look like comments
+      const ariaLabel = container.getAttribute('aria-label') || '';
+      return ariaLabel.includes('Comment by') || 
+             // Also check for comment-like functionality (reply button, like button)
+             (container.querySelector('div[role="button"]') && 
+              container.textContent.includes('Reply'));
+    });
+    
+    console.log(`Found ${commentContainers.length} comment containers to check`);
+    
+    // STEP 2: Now check each comment container for the user's identity
+    for (const container of commentContainers) {
+      // Method 1: Check for user ID in links within this container only
+      if (userId) {
+        const userLinks = container.querySelectorAll('a[href*="/user/"], a[href*="profile.php"]');
+        for (const link of userLinks) {
+          if ((link.href && link.href.includes(`/user/${userId}`)) || 
+              (link.href && link.href.includes(`profile.php?id=${userId}`))) {
+            console.log(`Found comment with user ID ${userId} in link href within comment container`);
+            return true;
+          }
         }
       }
-    } catch (e) {
-      console.log("No 'View more comments' button found or error clicking:", e);
-    }
-
-    // IMPROVED: Method 1 - Check for comments with aria-label containing user's name
-    if (userName) {
-      // Look for comments where aria-label contains "Comment by [Username]"
-      const commentContainers = document.querySelectorAll(
-        'div[role="article"][aria-label*="Comment by"]'
-      );
-
-      for (const container of commentContainers) {
-        const ariaLabel = container.getAttribute("aria-label") || "";
+      
+      // Method 2: Check comment aria-label directly (more reliable across regions)
+      if (userName) {
+        const ariaLabel = container.getAttribute('aria-label') || '';
         if (ariaLabel.includes(`Comment by ${userName}`)) {
-          console.log(
-            `Found comment with aria-label containing "${userName}", skipping post`
-          );
+          console.log(`Found comment with aria-label containing username: ${userName}`);
           return true;
+        }
+      }
+      
+      // Method 3: Check for username in comment author elements within this container
+      if (userName) {
+        // These are the typical selectors for comment author names
+        const authorSelectors = [
+          'span.x3nfvp2 span[dir="auto"]', 
+          'span[class*="x193iq5w"][dir="auto"]',
+          'a[role="link"] span[dir="auto"]'
+        ];
+        
+        for (const selector of authorSelectors) {
+          const authorElements = container.querySelectorAll(selector);
+          for (const element of authorElements) {
+            if (element.textContent.trim() === userName) {
+              console.log(`Found username "${userName}" in author element within comment container`);
+              return true;
+            }
+          }
         }
       }
     }
 
-    // IMPROVED: Method 2 - Check for comments with the right nested structure
-    if (userName) {
-      // This targets the specific structure observed in Facebook comments
-      const commentAuthorSpans = document.querySelectorAll(
-        'span.x3nfvp2 span[dir="auto"], div[role="article"] span.x193iq5w[dir="auto"]'
-      );
-
-      for (const span of commentAuthorSpans) {
-        console.log(
-          `Checking comment author span: "${span.textContent.trim()}"`
-        );
-        if (span.textContent.trim() === userName) {
-          console.log(
-            `Found comment by username "${userName}" in span structure, skipping post`
-          );
-          return true;
-        }
-      }
-    }
-
-    // Method 3: Original method checking for user ID in comment links
-    if (userId) {
-      // Look specifically for links within comment containers
-      const commentContainers = document.querySelectorAll(
-        'div[role="article"]'
-      );
-
-      for (const container of commentContainers) {
-        const userLinks = container.querySelectorAll(
-          `a[href*="/user/${userId}"], a[href*="profile.php?id=${userId}"]`
-        );
-        if (userLinks.length > 0) {
-          console.log(
-            `Found comment with link to user ID ${userId}, skipping post`
-          );
-          return true;
-        }
-      }
-    }
-
+    // If we get this far, no comments from the user were found
     console.log("No existing comments found from current user");
     return false;
   } catch (error) {
     console.error("Error checking for user comments:", error);
     return false; // On error, proceed with commenting
+  }
+}
+
+// Helper function to expand all comments if possible
+async function expandAllComments() {
+  try {
+    // Find and click "View more comments" and similar buttons
+    const possibleButtonTexts = ['view more comments', 'view', 'more comments', 'see more'];
+    
+    // Get all buttons and span elements that might be for expanding comments
+    const allButtons = document.querySelectorAll('div[role="button"], span[role="button"]');
+    
+    for (const button of allButtons) {
+      const buttonText = (button.textContent || '').toLowerCase();
+      if (possibleButtonTexts.some(text => buttonText.includes(text))) {
+        console.log(`Clicking '${button.textContent}' button to load more comments`);
+        button.click();
+        // Wait for comments to load
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    }
+  } catch (e) {
+    console.log("Error expanding comments:", e);
   }
 }
 
@@ -509,6 +509,32 @@ async function processPost(comment, delay) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log("Content script received message:", request);
 
+  if (request.action === "verifyPostStability") {
+    // Check if we're on a modal post
+    const isModal = isModalPost();
+
+    // Get modal info
+    const modalInfo = getPostModalInfo();
+
+    // Send response
+    sendResponse({
+      isModal: isModal,
+      modalInfo: modalInfo,
+    });
+
+    return true;
+  }
+
+  if (request.action === "checkModalStability") {
+    const isStable = checkModalStability(request.previousInfo);
+
+    sendResponse({
+      isStable: isStable,
+    });
+
+    return true;
+  }
+
   if (request.action === "processPost") {
     // Create a flag to track if response was sent
     let responseSent = false;
@@ -597,6 +623,89 @@ function debugPage() {
     return attrs;
   }
 }
+
+// Check if we're on a modal post
+function isModalPost() {
+  // Check for modal dialog
+  const modalOverlay = document.querySelector(
+    'div[role="dialog"][aria-modal="true"]'
+  );
+  return !!modalOverlay;
+}
+
+// Get identifying information about current post modal to track stability
+function getPostModalInfo() {
+  try {
+    const modalOverlay = document.querySelector(
+      'div[role="dialog"][aria-modal="true"]'
+    );
+    if (!modalOverlay) return null;
+
+    // Get post author name
+    let authorName = "";
+    const authorElements = modalOverlay.querySelectorAll('a[role="link"] span');
+    for (const element of authorElements) {
+      if (element.textContent && element.textContent.trim().length > 0) {
+        authorName = element.textContent.trim();
+        break;
+      }
+    }
+
+    // Get post time if available
+    let postTime = "";
+    const timeElements = modalOverlay.querySelectorAll(
+      'span a[role="link"] span'
+    );
+    for (const element of timeElements) {
+      if (
+        (element.textContent && element.textContent.includes("h")) ||
+        element.textContent.includes("m") ||
+        element.textContent.includes("d")
+      ) {
+        postTime = element.textContent.trim();
+        break;
+      }
+    }
+
+    // Get part of post content
+    let postContent = "";
+    const contentElements = modalOverlay.querySelectorAll(
+      'div[data-ad-comet-preview="message"] span'
+    );
+    if (contentElements && contentElements.length > 0) {
+      postContent = contentElements[0].textContent.trim().substring(0, 50);
+    }
+
+    return {
+      authorName,
+      postTime,
+      postContent,
+    };
+  } catch (error) {
+    console.error("Error getting post modal info:", error);
+    return null;
+  }
+}
+
+// Check if post modal is stable and hasn't changed
+function checkModalStability(previousInfo) {
+  try {
+    if (!previousInfo) return false;
+
+    const currentInfo = getPostModalInfo();
+    if (!currentInfo) return false;
+
+    // Check if basic attributes match
+    const authorMatch = previousInfo.authorName === currentInfo.authorName;
+    const contentMatch = previousInfo.postContent === currentInfo.postContent;
+
+    return authorMatch && contentMatch;
+  } catch (error) {
+    console.error("Error checking modal stability:", error);
+    return false;
+  }
+}
+
 
 // Run debug on page load
 setTimeout(debugPage, 5000);
